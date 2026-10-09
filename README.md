@@ -31,7 +31,8 @@ Import-Module .\IseCopilot\IseCopilot.psd1
 Start-IseCopilot -Endpoint 'https://<your-resource>.openai.azure.com/' -Deployment 'gpt-4o'
 ```
 
-- **Send**: button or `Ctrl+Enter`. **New Topic** clears the conversation history.
+- **Send**: button or `Ctrl+Enter`. Press `Enter` or `Shift+Enter` in the prompt to add a line. **New Topic** clears the conversation history.
+- Chat replies render headings, bold, italic, strikethrough, inline and fenced code, and ordered or unordered list items.
 - **Explain / Refactor**: send the current editor selection with a canned prompt.
 - **Insert Code / Replace Selection**: use the first PowerShell code block from the last reply, or any text you select in the chat pane.
 - `Stop-IseCopilot` removes the panel.
