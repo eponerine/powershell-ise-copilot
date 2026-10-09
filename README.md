@@ -1,6 +1,9 @@
 # powershell-ise-copilot
 A ridiculous experiment in heritage software.
 
+<img width="1000" height="550" alt="image" src="https://github.com/user-attachments/assets/d43aa9e4-3f11-47d7-b820-9a82a7d1e03d" />
+
+
 ## WTF is this?
 
 A Copilot-style AI chat panel for the **Windows PowerShell ISE**: an editor that Microsoft stopped adding features to years ago and that only runs PowerShell 5.1 on .NET Framework.
