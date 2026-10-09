@@ -203,6 +203,71 @@ function New-Brush {
     $brush
 }
 
+function Add-MarkdownInline {
+    param($Inlines, [string]$Text)
+
+    $pattern = '(?<code>`+)(?<codeText>[^`]+?)\k<code>|(?<bold>\*\*|__)(?<boldText>.+?)\k<bold>|(?<strike>~~)(?<strikeText>.+?)\k<strike>|(?<italicStar>\*)(?<italicStarText>[^*]+?)\k<italicStar>|(?<italicUnderscore>_)(?<italicUnderscoreText>[^_]+?)\k<italicUnderscore>'
+    $position = 0
+    foreach ($match in [regex]::Matches($Text, $pattern)) {
+        if ($match.Index -gt $position) {
+            $Inlines.Add((New-Object System.Windows.Documents.Run $Text.Substring($position, $match.Index - $position)))
+        }
+
+        if ($match.Groups['code'].Success) {
+            $run = New-Object System.Windows.Documents.Run $match.Groups['codeText'].Value
+            $run.FontFamily = New-Object System.Windows.Media.FontFamily 'Consolas'
+            $run.Background = New-Brush 0xF3 0xF3 0xF3
+            $Inlines.Add($run)
+        }
+        else {
+            $span = New-Object System.Windows.Documents.Span
+            if ($match.Groups['bold'].Success) {
+                $content = $match.Groups['boldText'].Value
+                $span.FontWeight = [System.Windows.FontWeights]::Bold
+            }
+            elseif ($match.Groups['strike'].Success) {
+                $content = $match.Groups['strikeText'].Value
+                $span.TextDecorations = [System.Windows.TextDecorations]::Strikethrough
+            }
+            elseif ($match.Groups['italicStar'].Success) {
+                $content = $match.Groups['italicStarText'].Value
+                $span.FontStyle = [System.Windows.FontStyles]::Italic
+            }
+            else {
+                $content = $match.Groups['italicUnderscoreText'].Value
+                $span.FontStyle = [System.Windows.FontStyles]::Italic
+            }
+            Add-MarkdownInline -Inlines $span.Inlines -Text $content
+            $Inlines.Add($span)
+        }
+        $position = $match.Index + $match.Length
+    }
+
+    if ($position -lt $Text.Length) {
+        $Inlines.Add((New-Object System.Windows.Documents.Run $Text.Substring($position)))
+    }
+}
+
+function Add-MarkdownParagraph {
+    param($Document, [string]$Text, [string]$Prefix = '', [int]$HeadingLevel = 0)
+
+    $paragraph = New-Object System.Windows.Documents.Paragraph
+    $paragraph.Margin = New-Object System.Windows.Thickness 0, 0, 0, 4
+    if ($HeadingLevel -gt 0) {
+        $paragraph.FontWeight = [System.Windows.FontWeights]::Bold
+        $paragraph.FontSize = switch ($HeadingLevel) {
+            1 { 20 }
+            2 { 18 }
+            3 { 16 }
+            default { 14 }
+        }
+        $paragraph.Margin = New-Object System.Windows.Thickness 0, 6, 0, 4
+    }
+    if ($Prefix) { $paragraph.Inlines.Add((New-Object System.Windows.Documents.Run $Prefix)) }
+    Add-MarkdownInline -Inlines $paragraph.Inlines -Text $Text
+    $Document.Blocks.Add($paragraph)
+}
+
 function Add-ChatEntry {
     param([string]$Role, [string]$Text, [string]$Note)
 
@@ -233,11 +298,34 @@ function Add-ChatEntry {
 
     $addProse = {
         param([string]$Chunk)
-        $Chunk = $Chunk.Trim()
-        if (-not $Chunk) { return }
-        $p = New-Object System.Windows.Documents.Paragraph (New-Object System.Windows.Documents.Run $Chunk)
-        $p.Margin = New-Object System.Windows.Thickness 0, 0, 0, 4
-        $doc.Blocks.Add($p)
+        $paragraphLines = New-Object 'System.Collections.Generic.List[string]'
+        $flushParagraph = {
+            if ($paragraphLines.Count) {
+                Add-MarkdownParagraph -Document $doc -Text ($paragraphLines -join ' ')
+                $paragraphLines.Clear()
+            }
+        }
+
+        foreach ($line in ($Chunk -split '\r?\n')) {
+            if (-not $line.Trim()) { & $flushParagraph; continue }
+
+            if ($line -match '^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$') {
+                & $flushParagraph
+                Add-MarkdownParagraph -Document $doc -Text $Matches[2] -HeadingLevel $Matches[1].Length
+            }
+            elseif ($line -match '^\s*[-+*]\s+(.+)$') {
+                & $flushParagraph
+                Add-MarkdownParagraph -Document $doc -Text $Matches[1] -Prefix ([string][char]0x2022 + ' ')
+            }
+            elseif ($line -match '^\s*(\d+)[.)]\s+(.+)$') {
+                & $flushParagraph
+                Add-MarkdownParagraph -Document $doc -Text $Matches[2] -Prefix ($Matches[1] + '. ')
+            }
+            else {
+                $paragraphLines.Add($line.Trim())
+            }
+        }
+        & $flushParagraph
     }
 
     foreach ($match in [regex]::Matches($Text, $pattern)) {
@@ -549,10 +637,16 @@ function Initialize-CopilotUi {
     })
     $script:Ui.txtPrompt.Add_PreviewKeyDown({
         param($source, $e)
-        if ($e.Key -eq [System.Windows.Input.Key]::Return -and
-            ([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Control)) {
-            $e.Handled = $true
-            Invoke-Safely { Invoke-CopilotSend }
+        if ($e.Key -eq [System.Windows.Input.Key]::Return) {
+            if ([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Control) {
+                $e.Handled = $true
+                Invoke-Safely { Invoke-CopilotSend }
+            }
+            else {
+                $e.Handled = $true
+                $source.SelectedText = "`r`n"
+                $source.CaretIndex += 2
+            }
         }
     })
 
